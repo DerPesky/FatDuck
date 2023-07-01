@@ -1,0 +1,10 @@
+[workspace]
+members = ["fatduck-cli", "fatduck-core"]
+
+[workspace.dependencies]
+bytes = "1.4.0"
+prost = "0.11.9"
+shakmaty = "0.24.0"
+ort = { version = "1.14.6" }
+flate2 = "1.0.25"
+thiserror = "1.0.40"

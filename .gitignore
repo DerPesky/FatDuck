@@ -1,0 +1,4 @@
+/target
+/Cargo.lock
+/fatduck-core/Cargo.lock
+/fatduck-cli/Cargo.lock
