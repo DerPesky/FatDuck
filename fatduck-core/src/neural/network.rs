@@ -1,6 +1,5 @@
 use crate::pblczero;
 use shakmaty::Bitboard;
-use std::fmt;
 
 pub struct NetworkCapabilities {
     input_format: pblczero::network_format::InputFormat,
@@ -19,19 +18,21 @@ impl NetworkCapabilities {
     }
 }
 
-pub trait Network {
-    fn capabilities(&self) -> &NetworkCapabilities;
-    fn new_computation(&self) -> Box<dyn NetworkComputation>;
-}
-
 pub trait NetworkComputation {
-    fn add_input(&mut self, planes: InputStack<NUM_INPUT_PLANES>);
+    /// Adds a sample to the batch
+    fn add_input(&mut self, planes: InputPlaneStack<NUM_INPUT_PLANES>);
     fn compute_blocking(&self);
+    // How many times add_input() has been called
     fn batch_size(&self) -> usize;
     fn q_val(&self, sample: usize) -> f32;
     fn d_val(&self, sample: usize) -> f32;
     fn p_val(&self, sample: usize, move_id: usize) -> f32;
     fn m_val(&self, sample: usize) -> f32;
+}
+
+pub trait Network {
+    fn capabilities(&self) -> &NetworkCapabilities;
+    fn new_computation(&self) -> Box<dyn NetworkComputation>;
 }
 
 pub const MOVE_HISTORY: usize = 8;
@@ -46,8 +47,8 @@ pub struct InputPlane {
     value: f32,
 }
 
-impl fmt::Debug for InputPlane {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Debug for InputPlane {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "InputPlane {{ mask: {:?}, value: {} }}",
@@ -76,11 +77,10 @@ impl InputPlane {
     }
 }
 
-// A stack of input planes
 #[derive(Debug)]
-pub struct InputStack<const N: usize>([InputPlane; N]);
+pub struct InputPlaneStack<const N: usize>([InputPlane; N]);
 
-impl<const N: usize> InputStack<N> {
+impl<const N: usize> InputPlaneStack<N> {
     pub fn new() -> Self {
         Self([InputPlane::default(); N])
     }

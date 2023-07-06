@@ -1,16 +1,21 @@
 use crate::{
     neural::network::{
-        InputStack, Network, NetworkCapabilities, NetworkComputation, NUM_INPUT_PLANES,
+        InputPlaneStack, Network, NetworkCapabilities, NetworkComputation, NUM_INPUT_PLANES,
     },
     pblczero::network_format::{InputFormat, MovesLeftFormat},
 };
-use ort::OrtResult;
+
+use ort::{tensor::DynOrtTensor, OrtResult};
 use std::{path::Path, sync::Arc};
 
 pub struct OnnxNetwork {
     capabilities: NetworkCapabilities,
     environment: Arc<ort::Environment>,
     session: ort::Session,
+    policy_head: Option<usize>,
+    value_head: Option<usize>,
+    wdl_head: Option<usize>,
+    mlh_head: Option<usize>,
 }
 
 impl OnnxNetwork {
@@ -25,6 +30,7 @@ impl OnnxNetwork {
 
         let session = ort::SessionBuilder::new(&environment)?
             .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
+            .with_intra_threads(2)?
             .with_model_from_file(filepath)?;
 
         // TODO: Extract capabilities from ONNX file
@@ -54,12 +60,13 @@ pub struct OnnxComputation<'a> {
 }
 
 impl NetworkComputation for OnnxComputation<'_> {
-    fn add_input(&mut self, planes: InputStack<NUM_INPUT_PLANES>) {
-        todo!()
-    }
+    fn add_input(&mut self, encoded_planes: InputPlaneStack<NUM_INPUT_PLANES>) {}
 
-    fn compute_blocking(&self) {
-        todo!()
+    fn compute_blocking(
+        &self,
+        encoded_planes: InputPlaneStack<NUM_INPUT_PLANES>,
+    ) -> OrtResult<Vec<DynOrtTensor<'_, ndarray::IxDyn>>> {
+        self.network.session.run(encoded_planes)
     }
 
     fn batch_size(&self) -> usize {
@@ -67,7 +74,7 @@ impl NetworkComputation for OnnxComputation<'_> {
     }
 
     fn q_val(&self, sample: usize) -> f32 {
-        todo!()
+        if self.network.wdl
     }
 
     fn d_val(&self, sample: usize) -> f32 {

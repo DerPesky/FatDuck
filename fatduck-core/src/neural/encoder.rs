@@ -1,14 +1,14 @@
 use crate::{
     chess::GameState,
     neural::network::{
-        InputStack, AUX_PLANE_BASE, MOVE_HISTORY, NUM_INPUT_PLANES, PLANES_PER_BOARD,
+        InputPlaneStack, AUX_PLANE_BASE, MOVE_HISTORY, NUM_INPUT_PLANES, PLANES_PER_BOARD,
     },
     pblczero,
 };
+
 use shakmaty::{
     Bitboard, Board, Castles, CastlingMode, CastlingSide, Chess, Color, EnPassantMode, Position,
 };
-use std::{cmp, hint::unreachable_unchecked};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum FillEmptyHistory {
@@ -29,7 +29,8 @@ pub enum BoardTransform {
 
 struct InputStackAugmenter;
 impl InputStackAugmenter {
-    pub fn classical_112_castling(stack: &mut InputStack<NUM_INPUT_PLANES>, position: &Chess) {
+    // 0, 1, 2, 3, 4, 5, 7, 12
+    pub fn castling(stack: &mut InputPlaneStack<NUM_INPUT_PLANES>, position: &Chess) {
         let (us, them) = match position.turn() {
             Color::White => (Color::White, Color::Black),
             Color::Black => (Color::Black, Color::White),
@@ -52,22 +53,26 @@ impl InputStackAugmenter {
         }
     }
 
-    pub fn help_find_edges(stack: &mut InputStack<NUM_INPUT_PLANES>) {
+    pub fn help_find_edges(stack: &mut InputPlaneStack<NUM_INPUT_PLANES>) {
         stack.planes_mut()[AUX_PLANE_BASE + 7].set_mask_max();
     }
 
-    pub fn two_fold_checked(stack: &mut InputStack<NUM_INPUT_PLANES>, state: &GameState) {
+    pub fn two_fold_checked(stack: &mut InputPlaneStack<NUM_INPUT_PLANES>, state: &GameState) {
         if state.repetition_count() >= 1 {
             stack.planes_mut()[AUX_PLANE_BASE + 12].set_mask_max();
         }
     }
 
-    pub fn fifty_move_rule(stack: &mut InputStack<NUM_INPUT_PLANES>, state: &GameState) {
+    pub fn fifty_move_rule(stack: &mut InputPlaneStack<NUM_INPUT_PLANES>, state: &GameState) {
         stack.planes_mut()[AUX_PLANE_BASE + 5].fill(state.position().halfmoves() as f32);
     }
 
+    pub fn black_turn(stack: &mut InputPlaneStack<NUM_INPUT_PLANES>) {
+        stack.planes_mut()[AUX_PLANE_BASE + 4].set_mask_max()
+    }
+
     pub fn piece_planes(
-        stack: &mut InputStack<NUM_INPUT_PLANES>,
+        stack: &mut InputPlaneStack<NUM_INPUT_PLANES>,
         board: &Board,
         us_them_colors: (Color, Color),
         offset: usize,
@@ -92,7 +97,7 @@ impl InputStackAugmenter {
     }
 
     pub fn transform_masks(
-        stack: &mut InputStack<NUM_INPUT_PLANES>,
+        stack: &mut InputPlaneStack<NUM_INPUT_PLANES>,
         transform: Option<BoardTransform>,
     ) {
         if transform.is_none() {
@@ -111,7 +116,7 @@ impl InputStackAugmenter {
                 Some(BoardTransform::Mirror) => mask_bboard = mask_bboard.flip_vertical(),
                 Some(BoardTransform::Transpose) => mask_bboard = mask_bboard.flip_diagonal(),
                 // SAFETY: None is early returned above.
-                None => unsafe { unreachable_unchecked() },
+                None => unsafe { std::hint::unreachable_unchecked() },
             }
 
             *plane.mask_mut() = mask_bboard.into();
@@ -119,26 +124,26 @@ impl InputStackAugmenter {
     }
 }
 
-impl<const N: usize> InputStack<N> {
+impl<const N: usize> InputPlaneStack<N> {
     pub fn encode_position_for_nn(
-        input_format: pblczero::network_format::InputFormat,
+        // input_format: pblczero::network_format::InputFormat,
         history: &[GameState],
         history_planes: usize,
         fill_setting: FillEmptyHistory,
         transform_out: Option<&mut BoardTransform>,
-    ) -> InputStack<NUM_INPUT_PLANES> {
-        let mut result = InputStack::new();
-        let current_state = history.last().unwrap();
+    ) -> InputPlaneStack<NUM_INPUT_PLANES> {
+        let mut result = InputPlaneStack::new();
+        let current_state = history.last().expect("History is empty");
 
-        match input_format {
-            pblczero::network_format::InputFormat::InputClassical112Plane => {
-                InputStackAugmenter::classical_112_castling(&mut result, current_state.position());
-            }
-            _ => panic!("Unsupported input format: {input_format:?}"),
-        };
+        // match input_format {
+        // pblczero::network_format::InputFormat::InputClassical112Plane => {
+        InputStackAugmenter::castling(&mut result, current_state.position());
+        // }
+        // _ => panic!("Unsupported input format: {input_format:?}"),
+        // };
 
         if current_state.position().turn().is_black() {
-            result.planes_mut()[AUX_PLANE_BASE + 4].set_mask_max();
+            InputStackAugmenter::black_turn(&mut result);
         }
 
         InputStackAugmenter::fifty_move_rule(&mut result, current_state);
@@ -147,11 +152,11 @@ impl<const N: usize> InputStack<N> {
         let mut flip = false;
         let mut history_idx = (history.len() as i32) - 1;
 
-        for i in 0..cmp::min(history_planes, MOVE_HISTORY) {
+        for i in 0..std::cmp::min(history_planes, MOVE_HISTORY) {
             // SAFETY: current_state will already panic on unwrap if history is empty
             let state = unsafe { history.get_unchecked(history.len().saturating_sub(1)) };
+
             if flip {
-                // mutably rotates
                 state.position().board().rotate_180();
             }
 
@@ -193,7 +198,6 @@ impl<const N: usize> InputStack<N> {
             };
 
             let base_offset = i * PLANES_PER_BOARD;
-
             InputStackAugmenter::piece_planes(&mut result, &board, (us, them), base_offset);
             InputStackAugmenter::two_fold_checked(&mut result, state);
 

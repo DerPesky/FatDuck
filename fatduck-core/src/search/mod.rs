@@ -1,58 +1,48 @@
 mod graph;
 mod mcts;
+pub mod stats;
 
-use crate::{chess::GameState, time::TimeManager};
-use shakmaty::Move;
 use std::time::Duration;
 
-#[derive(Clone, Copy, Debug)]
-pub enum SearchLimits {
-    Time(Duration),
-    Nodes(usize),
-    Depth(usize),
-    Infinite,
-}
+use crate::{
+    chess::GameState,
+    time::TimeManager,
+};
+use shakmaty::Move;
 
-impl Default for SearchLimits {
-    fn default() -> Self {
-        Self::Time(Duration::from_millis(1_000))
-    }
-}
-
-// my_cool_project.rs
-// ----------------------------------------------------------------------------------------
-// let strat = AlphaBeta::new(mctsParams);
-// let starting_board = GameState::default();
-// let time_manager = AlphaZeroTM::default();
-// let limits = SearchLimits::default(); // searches for 1 second by default
-// let mcts_manager = SearchManager::new(strat, starting_board, time_manager, limits);
-//
-// loop {
-//   // searches for 1 second then sends move
-//   let best_move: Move = mcts_manager.make_best_move();
-//   Uci::send_move(best_move);
-// }
 #[derive(Default)]
-struct SearchManager<T: SearchStrategy<TM>, TM: TimeManager> {
-    strategy: T,
+struct SearchManager<S: SearchStrategy, T: TimeManager> {
+    search: S,
+    time_manager: T,
     root_state: GameState,
-    // tree: Dag<T::NodeData, T::EdgeData>,
-    time_manager: TM,
+    game_tree: Tree<S::NodeData, S::EdgeData>,
     limits: SearchLimits,
 }
 
-impl<T: SearchStrategy<TM>, TM: TimeManager> SearchManager<T, TM> {
-    pub fn new(strategy: T, root_state: GameState, time_manager: TM, limits: SearchLimits) -> Self {
+impl<S: SearchStrategy, T: TimeManager> SearchManager<S, T> {
+    pub fn new(
+        search: T,
+        root_state: GameState,
+        game_tree: Tree<S::NodeData, S::EdgeData>,
+        time_manager: T,
+        limits: SearchLimits,
+    ) -> Self {
         Self {
-            strategy,
-            root_state,
+            search,
             time_manager,
+            root_state,
+            game_tree,
             limits,
         }
     }
 
-    // Returns best move found within `SearchLimits`
+    // Returns best move found within `Self.limits`
     pub fn make_best_move(&mut self) -> Move {
+        todo!();
+    }
+
+    /// Returns best move found within `limits`.
+    pub fn make_best_move_with_limits(&mut self, limits: SearchLimits) -> Move {
         todo!();
     }
 
@@ -69,30 +59,34 @@ impl<T: SearchStrategy<TM>, TM: TimeManager> SearchManager<T, TM> {
     }
 }
 
-// User creates search strategy object, calls search with given state, time_manager, and limits
-pub trait SearchStrategy<TM: TimeManager> {
-    type NodeData: Default + Copy + Clone + Send + Sync;
-    type EdgeData: Default + Copy + Clone + Send + Sync;
-    type Params: Default + Copy + Clone + Send + Sync;
-    type Stats: Default + Copy + Clone;
+pub trait SearchStrategy {
+    type NodeData: Copy + Send + Sync;
+    type EdgeData: Copy + Send + Sync;
+    type Params: Default + Copy + Send + Sync;
+    type Stats: Copy + Clone;
 
+    /// Name of the search strategy (e.g "Mcts", "AlphaBeta")
     fn name(&self) -> &str;
-    // Returns the best move given a state and time manager which can dynamically adjust the time
-    // limit.
-    fn dynamic_time_search(
-        &mut self,
-        state: &GameState,
-        time_manager: &TM,
-        params: &mut Self::Params,
-    ) -> Move;
-    // Returns the best move given a state and a fixed search limit.
     fn fixed_limit_search(
         &mut self,
         state: &GameState,
         limits: SearchLimits,
         params: &mut Self::Params,
     ) -> Move;
-    fn parameters(&self) -> &Self::Params;
-    // fn iteration_stats(&self) -> &IterationStats;
+    fn params(&self) -> &Self::Params;
     fn all_stats(&self) -> &Self::Stats;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum SearchLimits {
+    Time(Duration),
+    Nodes(usize),
+    Depth(usize),
+    Infinite,
+}
+
+impl Default for SearchLimits {
+    fn default() -> Self {
+        Self::Time(std::time::Duration::from_millis(1_000))
+    }
 }

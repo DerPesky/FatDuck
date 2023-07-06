@@ -1,3 +1,5 @@
+pub mod uci;
+
 use shakmaty::{Chess, Outcome, Position};
 
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +33,7 @@ impl GameState {
     }
 
     pub fn compute_game_result(&self) -> Option<Outcome> {
-        // `position.outcome()` does not consider 50-move rule or 3-fold repetition.
+        // position.outcome() does not consider 50-move rule or 3-fold repetition.
         if self.position.halfmoves() >= 100 || self.repetition_count >= 2 {
             return Some(Outcome::Draw);
         }

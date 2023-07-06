@@ -3,38 +3,122 @@ use crate::{
     search::{SearchLimits, SearchStrategy},
     time::TimeManager,
 };
+
 use shakmaty::Move;
+/// The general API for a Monte Carlo Tree Search algorithm.
 
-// If has custom params for specific formula, then will need to create own struct and fill it from
-// user input.
-type PlayMoveSelector = fn(&[MctsNodeData]) -> usize;
-type ExploreMoveSelector = fn(&[MctsNodeData]) -> usize;
-
-#[derive(Default, Copy, Clone)]
-struct MctsParams {
-    cpuct: f32,
-    dirichlet_alpha: f32,
-    play_selector: PlayMoveSelector,
-    explore_selector: ExploreMoveSelector,
+// Intended usage:
+// ```
+// let params = MctsParams::default();
+// let play_selector = MaxVisits::default();
+// let explore_selector = Puct::default();
+// let rp = Minimax::default();
+// let nvr = QIncremental::default();
+//
+// let mut mcts = Mcts::new(params, play_selector, explore_selector, rp, nvr);
+// // or
+// // Strongest configuration
+// let mut mcts = Mcts::default();
+// ```
+struct Mcts<PS, ES, RP, NVR>
+where
+    PS: PlaySelector,
+    ES: ExploreSelector,
+    RP: ResultPropagator,
+    NVR: NodeValueRecalculator,
+{
+    params: MctsParams,
+    play_selector: PS,
+    explore_selector: ES,
+    result_propagator: RP,
+    node_value_recalculator: NVR,
 }
 
-impl MctsParams {
+impl<PS, ES, RP, NVR> Mcts<PS, ES, RP, NVR>
+where
+    PS: PlaySelector,
+    ES: ExploreSelector,
+    RP: ResultPropagator,
+    NVR: NodeValueRecalculator,
+{
     pub fn new(
-        cpuct: f32,
-        dirichlet_alpha: f32,
-        play_selector: PlayMoveSelector,
-        explore_selector: ExploreMoveSelector,
+        params: MctsParams,
+        play_selector: PS,
+        explore_selector: ES,
+        result_propagator: RP,
+        node_value_recalculator: NVR,
     ) -> Self {
         Self {
-            cpuct,
-            dirichlet_alpha,
+            params,
             play_selector,
             explore_selector,
+            result_propagator,
+            node_value_recalculator,
         }
     }
 }
 
-#[derive(Default, Clone, Copy)]
+impl<PS, ES, RP, NVR> SearchStrategy for Mcts<PS, ES, RP, NVR>
+where
+    PS: PlaySelector,
+    ES: ExploreSelector,
+    RP: ResultPropagator,
+    NVR: NodeValueRecalculator,
+{
+    type NodeData = MctsNodeData;
+    type EdgeData = MctsEdgeData;
+    type Params = MctsParams;
+    type Stats = MctsStats;
+
+    fn name(&self) -> &str {
+        "Mcts"
+    }
+
+    fn fixed_limit_search(
+        &mut self,
+        state: &GameState,
+        limits: SearchLimits,
+        params: &mut Self::Params,
+    ) -> Move {
+        todo!();
+    }
+
+    fn params(&self) -> &Self::Params {
+        todo!()
+    }
+
+    fn all_stats(&self) -> &Self::Stats {
+        todo!()
+    }
+}
+
+#[derive(Copy, Clone)]
+struct MctsParams {
+    cpuct: f32,
+    dirichlet_alpha: f32,
+}
+
+impl MctsParams {
+    pub fn new(cpuct: f32, dirichlet_alpha: f32) -> Self {
+        Self {
+            cpuct,
+            dirichlet_alpha,
+        }
+    }
+}
+
+impl Default for MctsParams {
+    fn default() -> Self {
+        Self::new(1.0, 0.3)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct MctsStats {
+    nodes: u32,
+}
+
+#[derive(Clone, Copy)]
 struct MctsNodeData {
     /// Q = W - L
     q: f32,
@@ -54,80 +138,18 @@ struct MctsEdgeData {
     p: f32,
 }
 
-struct Mcts {
-    params: MctsParams,
-}
-
-impl Mcts {
-    pub fn new(params: MctsParams) -> Self {
-        Self { params }
-    }
-}
-
-impl<TM: TimeManager> SearchStrategy<TM> for Mcts {
-    type NodeData = MctsNodeData;
-    type EdgeData = MctsEdgeData;
-    type Params = MctsParams;
-    type Stats = ();
-
-    fn name(&self) -> &str {
-        "MCTS"
-    }
-
-    fn dynamic_time_search(
-        &mut self,
-        state: &GameState,
-        time_manager: &TM,
-        params: &mut Self::Params,
-    ) -> Move {
-        todo!();
-    }
-
-    fn fixed_limit_search(
-        &mut self,
-        state: &GameState,
-        limits: SearchLimits,
-        params: &mut Self::Params,
-    ) -> Move {
-        todo!()
-    }
-
-    fn parameters(&self) -> &Self::Params {
-        todo!();
-    }
-
-    fn all_stats(&self) -> &Self::Stats {
-        todo!();
-    }
-}
-
-/// Selection of which child node of root to play:
-/// struct MaxNodes;
-/// impl PlayMoveSelection for MaxNodes {
-///   type AlgoParams = ();
-///
-///   fn best_move_index(&self, params: &Self::AlgoParams, root_data: MctsNodeData) -> usize {
-///     // Iterate over all children from root and
-///   }
-///
-///   fn best_move(&self, params: &Self::AlgoParams, move_data: MctsNodeData) -> Move {
-///
-/// }
-///
-trait PlayMoveSelection {
-    // includes formula specific parameters and any info needed from search
+trait PlaySelector {
     type AlgoParams;
 
-    fn best_move_index(&self, params: &Self::AlgoParams, root_data: MctsNodeData) -> usize;
+    fn best_move_idx(&self, params: &Self::AlgoParams, root_data: MctsNodeData) -> usize;
     fn best_move(&self, params: &Self::AlgoParams, root_data: MctsNodeData) -> Move;
 }
 
-// Selection of which move to explore
-trait ExploreMoveSelection {
+trait ExploreSelector {
     type AlgoParams;
 
-    fn best_explore_move(&self, params: &Self::AlgoParams, move_data: MctsNodeData) -> Move;
-    fn best_explore_move_index(&self, params: &Self::AlgoParams, move_data: MctsNodeData) -> usize;
+    fn best_move(&self, params: &Self::AlgoParams, move_data: MctsNodeData) -> Move;
+    fn best_move_idx(&self, params: &Self::AlgoParams, move_data: MctsNodeData) -> usize;
     fn add_explore_scores_to_nodes(
         &self,
         params: &Self::AlgoParams,
@@ -136,7 +158,18 @@ trait ExploreMoveSelection {
     );
 }
 
-trait ResultPropagation {
+trait NodeValueRecalculator {
+    type AlgoParams;
+
+    fn recalculate_node_value(
+        &self,
+        params: &Self::AlgoParams,
+        move_data: &mut MctsNodeData,
+        move_data: &mut MctsEdgeData,
+    );
+}
+
+trait ResultPropagator {
     type AlgoParams;
 
     fn propagate_result(
